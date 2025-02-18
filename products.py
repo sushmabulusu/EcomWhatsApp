@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from typing import Optional
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 import shutil
 import os
 import sqlite3
@@ -36,18 +37,34 @@ def upload_image(file: UploadFile = File(...)):
     return {"message": "Image uploaded successfully", "image_url": f"/{UPLOAD_FOLDER}/{file.filename}"}
 
 @router.post("/add_product")
-def add_product(product: ProductRequest, file: UploadFile = File(...)):
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    image_url = f"/{UPLOAD_FOLDER}/{file.filename}"
-    
+async def add_product(
+    name: str = Form(...),
+    price: float = Form(...),
+    category_id: int = Form(...),
+    image_url: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None)
+):
+    # If an image file is uploaded, save it
+    if file:
+        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        image_url = f"/{UPLOAD_FOLDER}/{file.filename}"  # Overwrite image_url with uploaded file
+
+    # Ensure that at least one image source is provided
+    if not image_url:
+        raise HTTPException(status_code=400, detail="Either an image file or image URL must be provided.")
+
+    # Insert product into the database
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO products (name, price, image_url, category_id) VALUES (?, ?, ?, ?)", 
-                   (product.name, product.price, image_url, product.category_id))
+    cursor.execute(
+        "INSERT INTO products (name, price, image_url, category_id) VALUES (?, ?, ?, ?)",
+        (name, price, image_url, category_id)
+    )
     conn.commit()
     conn.close()
+
     return {"message": "Product added successfully", "image_url": image_url}
 
 @router.get("/view_products")
